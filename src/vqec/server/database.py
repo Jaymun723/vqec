@@ -11,9 +11,16 @@ engine_kwargs: dict = {}
 if settings.database_url.startswith("sqlite"):
     engine_kwargs["connect_args"] = {"check_same_thread": False}
     if "memory" not in settings.database_url:
-        engine_kwargs["connect_args"]["timeout"] = 30
+        engine_kwargs["connect_args"]["timeout"] = 60
 
-async_engine = create_async_engine(settings.database_url, echo=False, **engine_kwargs)
+async_engine = create_async_engine(
+    settings.database_url,
+    echo=False,
+    pool_size=256,
+    max_overflow=512,
+    pool_pre_ping=True,
+    **engine_kwargs
+)
 
 async_session_factory = sessionmaker(
     async_engine, class_=AsyncSession, expire_on_commit=False

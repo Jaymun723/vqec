@@ -39,7 +39,7 @@ async def _lease_loop(stop: asyncio.Event) -> None:
         except Exception as exc:
             logger.error("Lease loop error: %s", exc)
         try:
-            await asyncio.wait_for(stop.wait(), timeout=10)
+            await asyncio.wait_for(stop.wait(), timeout=settings.worker_poll_interval_ms / 1000)
         except TimeoutError:
             continue
 

@@ -37,6 +37,23 @@ def _max_idle_polls() -> int | None:
     return int(raw)
 
 
+# HTTP client for heartbeat (shared across heartbeat threads)
+_heartbeat_client_lock = threading.Lock()
+_heartbeat_client = None
+
+
+def _get_heartbeat_client() -> httpx.Client:
+    """Get or create a shared heartbeat client with appropriate pool limits."""
+    global _heartbeat_client
+    with _heartbeat_client_lock:
+        if _heartbeat_client is None:
+            _heartbeat_client = httpx.Client(
+                limits=httpx.Limits(max_connections=32, max_keepalive_connections=8),
+                timeout=httpx.Timeout(10.0)
+            )
+        return _heartbeat_client
+
+
 def heartbeat_loop(api_url: str, interval: float = 60):
     while True:
         time.sleep(interval)
@@ -45,9 +62,9 @@ def heartbeat_loop(api_url: str, interval: float = 60):
         if not task_ids:
             continue
         try:
-            resp = httpx.post(
-                f"{api_url}/worker/heartbeat", 
-                json={"task_ids": task_ids}, 
+            resp = _get_heartbeat_client().post(
+                f"{api_url}/worker/heartbeat",
+                json={"task_ids": task_ids},
                 timeout=10.0
             )
             if resp.status_code == 404:
@@ -80,14 +97,19 @@ def run_task(api_url: str, task: dict[str, Any]) -> None:
             try:
                 metrics = execute_data_generation(data_spec, temp_path)
                 
-                with open(temp_path, "rb") as f:
-                    files = {"file": (f"{task_id}.pkl.gz", f, "application/gzip")}
-                    data = {
-                        "shots": str(metrics.pop("shots")),
-                        "metrics_json": json.dumps(metrics)
-                    }
-                    resp = httpx.post(f"{api_url}/worker/upload/{task_id}", files=files, data=data, timeout=None)
-                    resp.raise_for_status()
+                # Use dedicated client for upload with higher timeout for large files
+                with httpx.Client(
+                    limits=httpx.Limits(max_connections=64),
+                    timeout=httpx.Timeout(600.0, read=600.0)
+                ) as client:
+                    with open(temp_path, "rb") as f:
+                        files = {"file": (f"{task_id}.pkl.gz", f, "application/gzip")}
+                        data = {
+                            "shots": str(metrics.pop("shots")),
+                            "metrics_json": json.dumps(metrics)
+                        }
+                        resp = client.post(f"{api_url}/worker/upload/{task_id}", files=files, data=data)
+                        resp.raise_for_status()
                 logger.info(f"Completed DataGenerationTask {task_id}")
             finally:
                 if os.path.exists(temp_path):
@@ -101,13 +123,18 @@ def run_task(api_url: str, task: dict[str, Any]) -> None:
             
             with tempfile.NamedTemporaryFile(suffix=".pkl.gz", delete=False) as tmp:
                 temp_path = tmp.name
-            
+
             try:
-                with httpx.stream("GET", f"{api_url}/worker/download/{data_id}") as resp:
-                    resp.raise_for_status()
-                    with open(temp_path, "wb") as f:
-                        for chunk in resp.iter_bytes():
-                            f.write(chunk)
+                # Use a dedicated client with larger connection pool for raw performance
+                with httpx.Client(
+                    limits=httpx.Limits(max_connections=128, max_keepalive_connections=32),
+                    timeout=httpx.Timeout(300.0, read=300.0)
+                ) as client:
+                    with client.stream("GET", f"{api_url}/worker/download/{data_id}") as resp:
+                        resp.raise_for_status()
+                        with open(temp_path, "wb") as f:
+                            for chunk in resp.iter_bytes():
+                                f.write(chunk)
                 
                 metrics = execute_decoding(data_spec, decode_spec, temp_path)
                 
@@ -117,7 +144,8 @@ def run_task(api_url: str, task: dict[str, Any]) -> None:
                     "status": "COMPLETED",
                     "metrics": metrics
                 }
-                resp = httpx.post(f"{api_url}/worker/complete", json=payload, timeout=10.0)
+                # Use heartbeat client for complete request
+                resp = _get_heartbeat_client().post(f"{api_url}/worker/complete", json=payload, timeout=10.0)
                 resp.raise_for_status()
                 logger.info(f"Completed DecodingTask {task_id}")
             finally:
@@ -133,7 +161,7 @@ def run_task(api_url: str, task: dict[str, Any]) -> None:
             "error_message": str(e)
         }
         try:
-            httpx.post(f"{api_url}/worker/complete", json=payload, timeout=10.0)
+            _get_heartbeat_client().post(f"{api_url}/worker/complete", json=payload, timeout=10.0)
         except Exception as api_err:
             logger.error(f"Failed to report error to API: {api_err}")
 
