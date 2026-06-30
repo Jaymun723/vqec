@@ -1,0 +1,23 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Generated API snapshot (use GET /openapi.json from running server)
+openapi.json
+
+# Generated
+data/
+.coverage
+.claude/
+.pytest_cache/
+docs/
+
+# Legacy files
+legacy-code/

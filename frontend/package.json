@@ -1,0 +1,52 @@
+{
+  "name": "vqec-visualise",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@tanstack/react-query": "^5.99.2",
+    "@tanstack/react-table": "^8.21.3",
+    "@types/d3-contour": "^3.0.6",
+    "d3-contour": "^4.0.2",
+    "hyparquet": "^1.25.6",
+    "hyparquet-compressors": "^1.1.1",
+    "plotly.js-dist-min": "^3.5.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "react-plotly.js": "^2.6.0",
+    "react-resizable-panels": "^4.10.0",
+    "react-router-dom": "^7.14.2",
+    "zod": "^4.3.6",
+    "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^24.12.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/react-plotly.js": "^2.6.4",
+    "@vitejs/plugin-react": "^6.0.1",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.5.0",
+    "jsdom": "^29.1.1",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.58.2",
+    "vite": "^8.0.9",
+    "vitest": "^3.0.0"
+  }
+}
