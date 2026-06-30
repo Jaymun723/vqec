@@ -5,12 +5,14 @@ from vqec.server.models.db import TaskStatus
 
 # System & Registry Schemas
 
+
 class SystemInfo(BaseModel):
     name: str
     version: str
     status: str
     documentation: str
     registry: str
+
 
 class RegistryComponent(BaseModel):
     model_config = {"populate_by_name": True}
@@ -20,15 +22,19 @@ class RegistryComponent(BaseModel):
     schema_: Dict[str, Any] = Field(alias="schema")
     compatibility: Dict[str, List[str]]
 
+
 class ValidateExperimentRequest(BaseModel):
     config: Dict[str, Any]
+
 
 class ValidateExperimentResponse(BaseModel):
     valid: bool
     jobs_count: int
     error: Optional[str] = None
 
+
 # Task Schemas
+
 
 class DecodingTaskRead(BaseModel):
     id: int
@@ -39,6 +45,7 @@ class DecodingTaskRead(BaseModel):
     error_message: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
 
 class ExperimentTaskRead(BaseModel):
     id: int
@@ -51,9 +58,11 @@ class ExperimentTaskRead(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+
 class ExperimentTaskDetail(ExperimentTaskRead):
     config: Dict[str, Any]
     jobs: List[DecodingTaskRead]
+
 
 class ExperimentTaskDeletedRead(BaseModel):
     id: int
@@ -61,11 +70,14 @@ class ExperimentTaskDeletedRead(BaseModel):
     config_hash: str
     status: str = "deleted"
 
+
 # Worker Schemas
 
+
 class WorkerPollRequest(BaseModel):
-    batch_size: int = Field(default=10, le=100)
+    batch_size: int = Field(default=10)
     has_gpu: bool = False
+
 
 class WorkerTaskSpec(BaseModel):
     type: str
@@ -74,14 +86,18 @@ class WorkerTaskSpec(BaseModel):
     spec: Dict[str, Any]
     data_spec: Optional[Dict[str, Any]] = None
 
+
 class WorkerPollResponse(BaseModel):
     tasks: List[WorkerTaskSpec]
+
 
 class WorkerHeartbeatRequest(BaseModel):
     task_ids: List[int]
 
+
 class WorkerStatusResponse(BaseModel):
     status: str = "ok"
+
 
 class DecodingMetrics(BaseModel):
     logical_error_rate: float
@@ -89,6 +105,7 @@ class DecodingMetrics(BaseModel):
     time_decoder_setup_s: float
     time_decoder_decode_s: float
     time_total_s: float
+
 
 class WorkerCompleteRequest(BaseModel):
     type: str
