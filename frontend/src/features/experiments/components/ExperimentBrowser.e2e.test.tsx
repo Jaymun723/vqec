@@ -10,8 +10,7 @@ global.fetch = function(url: any, init?: any) {
 } as any
 
 import { beforeAll, afterAll, describe, it, expect } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import * as React from 'react'
 import { spawn, ChildProcess, execSync } from 'child_process'
 import * as path from 'path'
@@ -71,7 +70,8 @@ describe('ExperimentBrowser UI & API E2E Integration', () => {
         cwd: path.resolve(__dirname, '../../../../../'),
         env: {
           ...process.env,
-          VQEC_DATABASE_URL: `sqlite+aiosqlite:///${dbPath}`
+          VQEC_DATABASE_URL: `sqlite+aiosqlite:///${dbPath}`,
+          VQEC_DASK_SCHEDULER_ADDRESS: ""
         }
       }
     )
@@ -158,7 +158,7 @@ describe('ExperimentBrowser UI & API E2E Integration', () => {
     expect(postRes.ok).toBe(true)
     const taskData = await postRes.json()
     expect(taskData.name).toBe("UI_E2E_Test_Task")
-    expect(taskData.status).toBe("PENDING")
+    expect(taskData.status).toBe("IN_FLIGHT")
 
     // 2. Render the React UI Component targeting our test port
     const queryClient = new QueryClient({
@@ -184,12 +184,12 @@ describe('ExperimentBrowser UI & API E2E Integration', () => {
     // 3. E2E Cancel Button Clicks
     const cancelBtn = screen.getByRole('button', { name: /Cancel/i })
     expect(cancelBtn).toBeDefined()
-    await userEvent.click(cancelBtn)
+    fireEvent.click(cancelBtn)
 
     // Verify Cancel Confirmation Modal displays
     const confirmCancelBtn = await screen.findByRole('button', { name: /Confirm Cancel/i })
     expect(confirmCancelBtn).toBeDefined()
-    await userEvent.click(confirmCancelBtn)
+    fireEvent.click(confirmCancelBtn)
 
     // Assert task status updates to CANCELLED in real-time in the UI table
     await waitFor(() => {
@@ -203,11 +203,11 @@ describe('ExperimentBrowser UI & API E2E Integration', () => {
     // 4. E2E Retry Button Clicks
     const retryBtn = screen.getByRole('button', { name: /Retry/i })
     expect(retryBtn).toBeDefined()
-    await userEvent.click(retryBtn)
+    fireEvent.click(retryBtn)
 
-    // Assert task status successfully transitions back to PENDING in the UI table
+    // Assert task status successfully transitions back to IN_FLIGHT in the UI table
     await waitFor(() => {
-      const statusBadge = screen.getByText('PENDING', { selector: '.status-badge' })
+      const statusBadge = screen.getByText('IN_FLIGHT', { selector: '.status-badge' })
       expect(statusBadge).toBeDefined()
     }, { timeout: 3000 })
 
@@ -217,9 +217,9 @@ describe('ExperimentBrowser UI & API E2E Integration', () => {
     // 5. E2E Delete Button Clicks
     // Cancel the task once again to expose the Delete button in the UI
     const cancelBtn2 = screen.getByRole('button', { name: /Cancel/i })
-    await userEvent.click(cancelBtn2)
+    fireEvent.click(cancelBtn2)
     const confirmCancelBtn2 = await screen.findByRole('button', { name: /Confirm Cancel/i })
-    await userEvent.click(confirmCancelBtn2)
+    fireEvent.click(confirmCancelBtn2)
 
     await waitFor(() => {
       expect(screen.getByText('CANCELLED', { selector: '.status-badge' })).toBeDefined()
@@ -228,12 +228,12 @@ describe('ExperimentBrowser UI & API E2E Integration', () => {
     // Now click the Delete button
     const deleteBtn = screen.getByRole('button', { name: /Delete/i })
     expect(deleteBtn).toBeDefined()
-    await userEvent.click(deleteBtn)
+    fireEvent.click(deleteBtn)
 
     // Confirm Delete inside confirmation modal
     const confirmDeleteBtn = await screen.findByRole('button', { name: /Confirm Delete/i })
     expect(confirmDeleteBtn).toBeDefined()
-    await userEvent.click(confirmDeleteBtn)
+    fireEvent.click(confirmDeleteBtn)
 
     // Assert that the task row is completely deleted and removed from the UI table
     await waitFor(() => {

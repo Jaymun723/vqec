@@ -38,7 +38,8 @@ async def lifespan(app: FastAPI):
         )
 
     # Initialize Dask client
-    dask_client = await Client(settings.dask_scheduler_address, asynchronous=True)
+    address = settings.dask_scheduler_address if settings.dask_scheduler_address else None
+    dask_client = await Client(address, asynchronous=True)
 
     yield
 

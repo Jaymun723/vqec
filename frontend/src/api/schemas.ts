@@ -1,10 +1,9 @@
 import { z } from 'zod'
 
 export const taskStatusSchema = z.enum([
-  'PENDING',
-  'RUNNING',
-  'COMPLETED',
-  'FAILED',
+  'IN_FLIGHT',
+  'DONE',
+  'ERROR',
   'CANCELLED',
 ])
 
@@ -36,27 +35,15 @@ export const experimentTaskReadSchema = z.object({
   name: z.string(),
   config_hash: z.string(),
   status: taskStatusSchema,
-  completed_jobs: z.number().int(),
-  total_jobs: z.number().int(),
-  error_message: z.string().nullable(),
-  created_at: z.string(),
-  updated_at: z.string(),
+  error: z.string().nullable(),
+  result_path: z.string().nullable(),
+  submitted_at: z.string(),
 })
 
 export const experimentTaskReadListSchema = z.array(experimentTaskReadSchema)
 
-export const jobTaskReadSchema = z.object({
-  id: z.number().int(),
-  status: taskStatusSchema,
-  logical_error_rate: z.number().nullable(),
-  time_total_s: z.number().nullable(),
-  created_at: z.string(),
-  updated_at: z.string(),
-})
-
 export const experimentTaskDetailSchema = experimentTaskReadSchema.extend({
   config: z.record(z.string(), z.unknown()),
-  jobs: z.array(jobTaskReadSchema),
 })
 
 export const validationResponseSchema = z.object({

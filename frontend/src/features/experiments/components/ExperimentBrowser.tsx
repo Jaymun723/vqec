@@ -25,10 +25,9 @@ import type { TaskStatus, ExperimentTaskRead } from '../../../api/types'
 import { Modal } from '../../../app/Modal'
 
 const statusOrder: TaskStatus[] = [
-  'PENDING',
-  'RUNNING',
-  'COMPLETED',
-  'FAILED',
+  'IN_FLIGHT',
+  'DONE',
+  'ERROR',
   'CANCELLED',
 ]
 
@@ -40,30 +39,10 @@ function toLocalDateTime(value: string) {
   return parseUTC(value).toLocaleString()
 }
 
-function formatDuration(exp: ExperimentTaskRead) {
-  const created = parseUTC(exp.created_at).getTime()
-  const updated = parseUTC(exp.updated_at).getTime()
+function formatAge(exp: ExperimentTaskRead) {
+  const created = parseUTC(exp.submitted_at).getTime()
   const now = Date.now()
-
-  let diffMs = 0
-  let label = ''
-
-  if (exp.status === 'COMPLETED') {
-    diffMs = updated - created
-  } else if (exp.status === 'RUNNING') {
-    diffMs = now - updated
-    label = 'running'
-  } else if (exp.status === 'PENDING') {
-    diffMs = now - created
-    label = 'idle'
-  } else if (exp.status === 'FAILED') {
-    diffMs = updated - created
-    label = 'failed'
-  } else if (exp.status === 'CANCELLED') {
-    diffMs = updated - created
-    label = 'cancelled'
-  }
-
+  let diffMs = now - created
   if (diffMs < 0) diffMs = 0
 
   const totalSecs = Math.floor(diffMs / 1000)
@@ -71,16 +50,13 @@ function formatDuration(exp: ExperimentTaskRead) {
   const mins = Math.floor((totalSecs % 3600) / 60)
   const secs = totalSecs % 60
 
-  let timeStr = ''
   if (hours > 0) {
-    timeStr = `${hours}h ${mins}m ${secs}s`
+    return `${hours}h ${mins}m ago`
   } else if (mins > 0) {
-    timeStr = `${mins}m ${secs}s`
+    return `${mins}m ${secs}s ago`
   } else {
-    timeStr = `${secs}s`
+    return `${secs}s ago`
   }
-
-  return label ? `${timeStr} (${label})` : timeStr
 }
 
 export interface ExperimentBrowserProps {
@@ -109,7 +85,7 @@ export function ExperimentBrowser({
   // Selected Experiment Inspector State
   const [detailExpId, setDetailExpId] = useState<number | null>(null)
 
-  // Local state to tick every second so running/pending durations increment smoothly
+  // Local state to tick every second so age increments smoothly
   const [, setTick] = useState(0)
   useEffect(() => {
     const timer = setInterval(() => setTick(t => t + 1), 1000)
@@ -175,7 +151,7 @@ export function ExperimentBrowser({
     columnHelper.accessor('name', {
       header: 'Experiment Name',
       cell: info => <span style={{ fontWeight: '600' }}>{info.getValue()}</span>,
-      size: 160,
+      size: 200,
     }),
     columnHelper.accessor('status', {
       header: 'Status',
@@ -190,54 +166,19 @@ export function ExperimentBrowser({
       size: 100,
     }),
     columnHelper.display({
-      id: 'duration',
-      header: 'Duration',
+      id: 'age',
+      header: 'Age',
       cell: info => {
         const exp = info.row.original
         return (
           <span style={{ fontSize: '12px', color: 'var(--text-main)', fontFamily: 'monospace' }}>
-            {formatDuration(exp)}
+            {formatAge(exp)}
           </span>
         )
       },
       size: 130,
     }),
-    columnHelper.display({
-      id: 'progress',
-      header: 'Progress (Jobs)',
-      cell: info => {
-        const row = info.row.original
-        const completed = row.completed_jobs
-        const total = row.total_jobs
-        const pct = total > 0 ? Math.round((completed / total) * 100) : 0
-        return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', paddingRight: '8px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: '500' }}>
-              <span>{completed}/{total}</span>
-              <span>{pct}%</span>
-            </div>
-            <div style={{
-              height: '6px',
-              borderRadius: '3px',
-              background: 'var(--bg-input-alt)',
-              border: '1px solid var(--border-muted)',
-              overflow: 'hidden',
-              position: 'relative',
-            }}>
-              <div style={{
-                height: '100%',
-                width: `${pct}%`,
-                background: row.status === 'FAILED' ? '#ef4444' : row.status === 'CANCELLED' ? '#f59e0b' : '#3b82f6',
-                borderRadius: '3px',
-                transition: 'width 0.4s ease',
-              }} />
-            </div>
-          </div>
-        )
-      },
-      size: 140,
-    }),
-    columnHelper.accessor('created_at', {
+    columnHelper.accessor('submitted_at', {
       header: 'Submitted',
       cell: info => parseUTC(info.getValue()).toLocaleDateString(),
       size: 100,
@@ -248,9 +189,9 @@ export function ExperimentBrowser({
       cell: info => {
         const exp = info.row.original
         const disabled = isItemDisabled?.(exp) ?? false
-        const canRetry = ['FAILED', 'CANCELLED', 'RUNNING'].includes(exp.status)
-        const canCancel = ['PENDING', 'RUNNING'].includes(exp.status)
-        const canDownload = exp.status === 'COMPLETED'
+        const canRetry = ['ERROR', 'CANCELLED'].includes(exp.status)
+        const canCancel = ['IN_FLIGHT'].includes(exp.status)
+        const canDownload = exp.status === 'DONE' && exp.result_path !== null
         const busy = retryMutation.isPending || cancelMutation.isPending || deleteMutation.isPending
 
         return (
@@ -411,7 +352,7 @@ export function ExperimentBrowser({
       {/* 3. Resizable Panel Splitter Layout */}
       <Group orientation="horizontal" style={{ flex: 1, minHeight: 0, display: 'flex', gap: '4px' }}>
         
-        {/* Left Panel: Table List (Removed extra box styles so it spans naturally) */}
+        {/* Left Panel: Table List */}
         <Panel id="list-panel" defaultSize={60} minSize={30} style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="tasks-table-wrap" style={{ flex: 1, overflow: 'auto', height: '100%' }}>
             <table className="tasks-table" style={{ width: '100%', minWidth: table.getCenterTotalSize() }}>
@@ -561,9 +502,9 @@ export function ExperimentBrowser({
                     </div>
                   </div>
 
-                  {detailQuery.data.error_message && (
+                  {detailQuery.data.error && (
                     <div className="tasks-error" style={{ margin: 0, padding: '10px', fontSize: '12px' }}>
-                      <strong>Error:</strong> {detailQuery.data.error_message}
+                      <strong>Error:</strong> {detailQuery.data.error}
                     </div>
                   )}
 
@@ -574,24 +515,20 @@ export function ExperimentBrowser({
                     borderRadius: '6px',
                     padding: '10px 12px',
                     display: 'grid',
-                    gridTemplateColumns: '1fr 1fr 1fr',
+                    gridTemplateColumns: '1fr 1fr',
                     gap: '12px',
                   }}>
                     <div>
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase' }}>Sub-jobs</span>
-                      <span style={{ fontWeight: '700', fontSize: '14px' }}>{detailQuery.data.completed_jobs} / {detailQuery.data.total_jobs}</span>
-                    </div>
-                    <div>
                       <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase' }}>Submitted</span>
-                      <span style={{ fontSize: '12px', fontWeight: '500' }}>{toLocalDateTime(detailQuery.data.created_at)}</span>
+                      <span style={{ fontSize: '12px', fontWeight: '500' }}>{toLocalDateTime(detailQuery.data.submitted_at)}</span>
                     </div>
                     <div>
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase' }}>Duration</span>
-                      <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--accent-blue)' }}>{formatDuration(detailQuery.data)}</span>
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase' }}>Config Hash</span>
+                      <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--accent-blue)', wordBreak: 'break-all' }}>{detailQuery.data.config_hash}</span>
                     </div>
                   </div>
 
-                  {/* Inspector Stacked Details (optimized for panel widths) */}
+                  {/* Inspector Stacked Details */}
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px', minHeight: 0, overflowY: 'auto', paddingRight: '4px' }}>
                     
                     {/* Config JSON */}
@@ -606,57 +543,11 @@ export function ExperimentBrowser({
                         color: 'var(--text-main)',
                         fontSize: '11px',
                         lineHeight: '1.4',
-                        maxHeight: '160px',
                         overflow: 'auto',
                         fontFamily: 'monospace',
                       }}>
                         {JSON.stringify(detailQuery.data.config, null, 2)}
                       </pre>
-                    </div>
-
-                    {/* Jobs grid status table */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1, minHeight: '180px' }}>
-                      <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>Sub-jobs progress</label>
-                      <div style={{
-                        flex: 1,
-                        background: 'var(--bg-input-alt)',
-                        border: '1px solid var(--border-muted)',
-                        borderRadius: '6px',
-                        overflow: 'auto',
-                      }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
-                          <thead style={{ background: 'var(--bg-input)', position: 'sticky', top: 0, borderBottom: '1px solid var(--border-muted)', zIndex: 2 }}>
-                            <tr>
-                              <th style={{ padding: '6px 8px' }}>Job ID</th>
-                              <th style={{ padding: '6px 8px' }}>Status</th>
-                              <th style={{ padding: '6px 8px' }}>Error Rate</th>
-                              <th style={{ padding: '6px 8px' }}>Time</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {detailQuery.data.jobs.length === 0 ? (
-                              <tr>
-                                <td colSpan={4} style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)' }}>No jobs.</td>
-                              </tr>
-                            ) : detailQuery.data.jobs.map(job => (
-                              <tr key={job.id} style={{ borderBottom: '1px solid var(--border-muted)' }}>
-                                <td style={{ padding: '6px 8px' }}><code>#{job.id}</code></td>
-                                <td style={{ padding: '6px 8px' }}>
-                                  <span className={`status-badge status-${job.status.toLowerCase()}`} style={{ fontSize: '9px', padding: '1px 4px' }}>
-                                    {job.status}
-                                  </span>
-                                </td>
-                                <td style={{ padding: '6px 8px' }}>
-                                  {job.logical_error_rate !== null ? job.logical_error_rate.toFixed(5) : '-'}
-                                </td>
-                                <td style={{ padding: '6px 8px' }}>
-                                  {job.time_total_s !== null ? `${job.time_total_s.toFixed(2)}s` : '-'}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -690,7 +581,7 @@ export function ExperimentBrowser({
       {/* Cancel Confirmation Modal */}
       <Modal title="Confirm Cancellation" isOpen={expToCancel !== null} onClose={() => setExpToCancel(null)}>
         <div className="confirmation-dialog">
-          <p>Cancel active sweep execution for experiment <strong>#{expToCancel}</strong>? All running/pending sub-jobs will be stopped.</p>
+          <p>Cancel active sweep execution for experiment <strong>#{expToCancel}</strong>?</p>
           <div className="modal-actions" style={{ marginTop: '20px', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
             <button type="button" className="btn" onClick={() => setExpToCancel(null)}>Go Back</button>
             <button

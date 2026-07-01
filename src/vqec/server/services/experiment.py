@@ -36,11 +36,20 @@ def wrap_data_generation(spec, data_hash):
     
     db_url = os.environ.get("VQEC_DATABASE_URL", "sqlite:///data/vqec_server.db").replace("sqlite+aiosqlite", "sqlite")
     engine = create_engine(db_url, connect_args={"timeout": 30})
-    with engine.begin() as conn:
-        conn.execute(
-            text("INSERT OR IGNORE INTO data_cache (task_hash, output_path, metadata_json) VALUES (:hash, :path, :meta)"),
-            {"hash": data_hash, "path": str(out_path), "meta": json.dumps(metrics)}
-        )
+    import time
+    for attempt in range(10):
+        try:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("INSERT OR IGNORE INTO data_cache (task_hash, output_path, metadata_json) VALUES (:hash, :path, :meta)"),
+                    {"hash": data_hash, "path": str(out_path), "meta": json.dumps(metrics)}
+                )
+            break
+        except Exception as e:
+            if "database is locked" in str(e).lower() and attempt < 9:
+                time.sleep(1 + attempt * 0.5)
+            else:
+                raise
     return {"outcome_file_path": str(out_path), "metadata_json": metrics}
 
 def wrap_decoding(data_spec, decode_spec, decode_hash, data_res):
@@ -52,11 +61,20 @@ def wrap_decoding(data_spec, decode_spec, decode_hash, data_res):
     
     db_url = os.environ.get("VQEC_DATABASE_URL", "sqlite:///data/vqec_server.db").replace("sqlite+aiosqlite", "sqlite")
     engine = create_engine(db_url, connect_args={"timeout": 30})
-    with engine.begin() as conn:
-        conn.execute(
-            text("INSERT OR IGNORE INTO decode_cache (task_hash, metadata_json) VALUES (:hash, :meta)"),
-            {"hash": decode_hash, "meta": json.dumps(metrics)}
-        )
+    import time
+    for attempt in range(10):
+        try:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("INSERT OR IGNORE INTO decode_cache (task_hash, metadata_json) VALUES (:hash, :meta)"),
+                    {"hash": decode_hash, "meta": json.dumps(metrics)}
+                )
+            break
+        except Exception as e:
+            if "database is locked" in str(e).lower() and attempt < 9:
+                time.sleep(1 + attempt * 0.5)
+            else:
+                raise
     return metrics
 
 def wrap_consolidation(jobs, decode_results, config_output):
@@ -95,20 +113,37 @@ def _on_consolidation_done(future, experiment_id, db_url):
     
     url = db_url.replace("sqlite+aiosqlite", "sqlite")
     engine = create_engine(url, connect_args={"timeout": 30})
+    import time
     
     try:
         result_path = future.result()
-        with engine.begin() as conn:
-            conn.execute(
-                text("UPDATE experiment SET status = :status, result_path = :path WHERE id = :id"),
-                {"status": TaskStatus.DONE.value, "path": result_path, "id": experiment_id}
-            )
+        for attempt in range(10):
+            try:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("UPDATE experiment SET status = :status, result_path = :path WHERE id = :id"),
+                        {"status": TaskStatus.DONE.value, "path": result_path, "id": experiment_id}
+                    )
+                break
+            except Exception as e:
+                if "database is locked" in str(e).lower() and attempt < 9:
+                    time.sleep(1 + attempt * 0.5)
+                else:
+                    raise
     except Exception as e:
-        with engine.begin() as conn:
-            conn.execute(
-                text("UPDATE experiment SET status = :status, error = :error WHERE id = :id"),
-                {"status": TaskStatus.ERROR.value, "error": str(e) + "\n" + traceback.format_exc(), "id": experiment_id}
-            )
+        for attempt in range(10):
+            try:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("UPDATE experiment SET status = :status, error = :error WHERE id = :id"),
+                        {"status": TaskStatus.ERROR.value, "error": str(e) + "\n" + traceback.format_exc(), "id": experiment_id}
+                    )
+                break
+            except Exception as inner_e:
+                if "database is locked" in str(inner_e).lower() and attempt < 9:
+                    time.sleep(1 + attempt * 0.5)
+                else:
+                    raise
     
     _active_experiments.pop(experiment_id, None)
 
@@ -233,7 +268,7 @@ class ExperimentService:
             await self.session.commit()
             if task_id in _active_experiments:
                 future = _active_experiments.pop(task_id)
-                future.cancel()
+                await future.cancel()
         return success
 
     async def cancel_experiment(self, task_id: int) -> Experiment | None:
@@ -253,7 +288,7 @@ class ExperimentService:
 
         if task_id in _active_experiments:
             future = _active_experiments.pop(task_id)
-            future.cancel()
+            await future.cancel()
 
         return experiment
 

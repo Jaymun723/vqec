@@ -1,8 +1,7 @@
 export type TaskStatus =
-  | 'PENDING'
-  | 'RUNNING'
-  | 'COMPLETED'
-  | 'FAILED'
+  | 'IN_FLIGHT'
+  | 'DONE'
+  | 'ERROR'
   | 'CANCELLED'
 
 // Deprecated task type kept for backward compatibility with the visualization tab
@@ -31,25 +30,13 @@ export interface ExperimentTaskRead {
   name: string
   config_hash: string
   status: TaskStatus
-  completed_jobs: number
-  total_jobs: number
-  error_message: string | null
-  created_at: string
-  updated_at: string
-}
-
-export interface JobTaskRead {
-  id: number
-  status: TaskStatus
-  logical_error_rate: number | null
-  time_total_s: number | null
-  created_at: string
-  updated_at: string
+  error: string | null
+  result_path: string | null
+  submitted_at: string
 }
 
 export interface ExperimentTaskDetail extends ExperimentTaskRead {
   config: Record<string, any>
-  jobs: JobTaskRead[]
 }
 
 export interface ExperimentConfig {
@@ -70,8 +57,6 @@ export interface ExperimentConfig {
     type: string
     params: Record<string, any>
   }
-  job_backend?: string
-  output?: string
 }
 
 export interface ValidationResponse {
@@ -88,6 +73,4 @@ export interface ListTasksParams {
   status?: TaskStatus
   limit?: number
   offset?: number
-  sort_by?: 'created_at' | 'updated_at'
-  sort_order?: 'asc' | 'desc'
 }

@@ -14,7 +14,7 @@ def mock_dask_client(monkeypatch):
     class MockFuture:
         def add_done_callback(self, cb):
             pass
-        def cancel(self):
+        async def cancel(self):
             pass
         def result(self):
             return "mocked_path.parquet"
