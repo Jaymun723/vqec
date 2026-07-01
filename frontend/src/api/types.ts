@@ -33,6 +33,9 @@ export interface ExperimentTaskRead {
   error: string | null
   result_path: string | null
   submitted_at: string
+  progress?: number | null
+  jobs_done?: number | null
+  jobs_total?: number | null
 }
 
 export interface ExperimentTaskDetail extends ExperimentTaskRead {

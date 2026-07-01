@@ -42,6 +42,10 @@ class ExperimentRead(BaseModel):
     error: Optional[str] = None
     result_path: Optional[str] = None
     submitted_at: datetime
+    completed_at: Optional[datetime] = None
+    progress: Optional[float] = None
+    jobs_done: Optional[int] = None
+    jobs_total: Optional[int] = None
 
 
 class ExperimentDetail(ExperimentRead):

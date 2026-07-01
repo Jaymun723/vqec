@@ -18,6 +18,8 @@ def mock_dask_client(monkeypatch):
             pass
         def result(self):
             return "mocked_path.parquet"
+        def done(self):
+            return False
 
     class MockClient:
         def submit(self, *args, **kwargs):

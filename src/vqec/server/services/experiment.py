@@ -13,10 +13,11 @@ from vqec.core.validator import CompatibilityError
 from vqec.server.models.db import Experiment, DataCache, DecodeCache, TaskStatus
 from vqec.server.models.schemas import ExperimentRead, ExperimentDetail
 from vqec.server.repositories.experiment import ExperimentRepository
-from vqec.server.utils import compute_config_hash
+from vqec.server.utils import compute_config_hash, utc_now
 from vqec.server.config import settings
 
 _active_experiments: dict[int, Future] = {}
+_active_experiments_futures: dict[int, list[Future]] = {}
 
 def get_dask_client():
     from vqec.server.main import dask_client
@@ -123,8 +124,8 @@ def _on_consolidation_done(future, experiment_id, db_url):
                 try:
                     async with engine.begin() as conn:
                         await conn.execute(
-                            text("UPDATE experiment SET status = :status, result_path = :path WHERE id = :id"),
-                            {"status": TaskStatus.DONE.value, "path": result_path, "id": experiment_id}
+                            text("UPDATE experiment SET status = :status, result_path = :path, completed_at = :completed_at WHERE id = :id"),
+                            {"status": TaskStatus.DONE.value, "path": result_path, "completed_at": utc_now(), "id": experiment_id}
                         )
                     break
                 except Exception as e:
@@ -137,8 +138,8 @@ def _on_consolidation_done(future, experiment_id, db_url):
                 try:
                     async with engine.begin() as conn:
                         await conn.execute(
-                            text("UPDATE experiment SET status = :status, error = :error WHERE id = :id"),
-                            {"status": TaskStatus.ERROR.value, "error": str(e) + "\n" + traceback.format_exc(), "id": experiment_id}
+                            text("UPDATE experiment SET status = :status, error = :error, completed_at = :completed_at WHERE id = :id"),
+                            {"status": TaskStatus.ERROR.value, "error": str(e) + "\n" + traceback.format_exc(), "completed_at": utc_now(), "id": experiment_id}
                         )
                     break
                 except Exception as inner_e:
@@ -148,6 +149,7 @@ def _on_consolidation_done(future, experiment_id, db_url):
                         raise
         
         _active_experiments.pop(experiment_id, None)
+        _active_experiments_futures.pop(experiment_id, None)
 
     try:
         loop = asyncio.get_running_loop()
@@ -162,6 +164,17 @@ class ExperimentService:
         self.dask_client = get_dask_client()
 
     async def to_read(self, experiment: Experiment) -> ExperimentRead:
+        progress = None
+        jobs_done = None
+        jobs_total = None
+
+        if experiment.status == TaskStatus.IN_FLIGHT and experiment.id in _active_experiments_futures:
+            futures = _active_experiments_futures[experiment.id]
+            jobs_total = len(futures)
+            if jobs_total > 0:
+                jobs_done = sum(1 for f in futures if f.done())
+                progress = jobs_done / jobs_total
+
         return ExperimentRead(
             id=experiment.id,
             name=experiment.name,
@@ -170,6 +183,10 @@ class ExperimentService:
             error=experiment.error,
             result_path=experiment.result_path,
             submitted_at=experiment.submitted_at,
+            completed_at=experiment.completed_at,
+            progress=progress,
+            jobs_done=jobs_done,
+            jobs_total=jobs_total,
         )
 
     async def to_detail(self, experiment: Experiment) -> ExperimentDetail:
@@ -229,6 +246,7 @@ class ExperimentService:
         consolidation_future = self.dask_client.submit(wrap_consolidation, jobs, decode_futures, config.output, pure=False, key=f"consolidate_{experiment.id}")
         consolidation_future.add_done_callback(lambda f: _on_consolidation_done(f, experiment.id, settings.database_url))
         _active_experiments[experiment.id] = consolidation_future
+        _active_experiments_futures[experiment.id] = list(data_futures.values()) + decode_futures
 
     async def submit_experiment(self, config_dict: dict) -> Experiment:
         config_hash = compute_config_hash(config_dict)
@@ -277,6 +295,7 @@ class ExperimentService:
             if task_id in _active_experiments:
                 future = _active_experiments.pop(task_id)
                 await future.cancel()
+            _active_experiments_futures.pop(task_id, None)
         return success
 
     async def cancel_experiment(self, task_id: int) -> Experiment | None:
@@ -290,6 +309,7 @@ class ExperimentService:
             )
 
         experiment.status = TaskStatus.CANCELLED
+        experiment.completed_at = utc_now()
         self.session.add(experiment)
         await self.session.commit()
         await self.session.refresh(experiment)
@@ -297,6 +317,7 @@ class ExperimentService:
         if task_id in _active_experiments:
             future = _active_experiments.pop(task_id)
             await future.cancel()
+        _active_experiments_futures.pop(task_id, None)
 
         return experiment
 
@@ -312,6 +333,7 @@ class ExperimentService:
 
         experiment.status = TaskStatus.IN_FLIGHT
         experiment.error = None
+        experiment.completed_at = None
         self.session.add(experiment)
         await self.session.commit()
         await self.session.refresh(experiment)

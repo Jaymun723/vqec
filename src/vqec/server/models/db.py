@@ -24,6 +24,7 @@ class Experiment(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     status: TaskStatus = Field(default=TaskStatus.IN_FLIGHT)
     submitted_at: datetime = Field(default_factory=utc_now)
+    completed_at: Optional[datetime] = Field(default=None)
     result_path: Optional[str] = Field(default=None)
     error: Optional[str] = Field(default=None)
 

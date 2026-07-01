@@ -131,7 +131,7 @@ export function normalizeSweepToLayers(
         params[name] = ensureNumber(row['noise_' + name])
       })
       const errors = ensureNumber(row.n_errors !== undefined ? row.n_errors : 0)
-      const shots = ensureNumber(row.shots || 1)
+      const shots = ensureNumber(row.runner_shots !== undefined ? row.runner_shots : 1)
       return {
         params,
         lepr: computeLepr(errors, shots, r),

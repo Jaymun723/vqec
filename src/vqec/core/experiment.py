@@ -177,12 +177,15 @@ def execute_data_generation(spec: DataGenerationSpec, outcome_path: str | Path) 
     t0 = time.perf_counter()
     p = Path(outcome_path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    with gzip.open(p, "wb") as f:
-        pickle.dump(measurements, f)
+    # Compress the entire payload in one C call to release the GIL, rather than through Python file wrappers
+    data = pickle.dumps(measurements, protocol=pickle.HIGHEST_PROTOCOL)
+    compressed = gzip.compress(data)
+    with open(p, "wb") as f:
+        f.write(compressed)
     t_pickle_write = time.perf_counter() - t0
 
-    uncompressed_size = len(pickle.dumps(measurements))
-    compressed_size = p.stat().st_size
+    uncompressed_size = len(data)
+    compressed_size = len(compressed)
 
     # shots = measurements.shape[0] if hasattr(measurements, "shape") else len(measurements)
     if isinstance(measurements, np.ndarray):
@@ -233,8 +236,11 @@ def execute_decoding(
     _ = noise.get(circuit)
 
     p = Path(outcome_path)
-    with gzip.open(p, "rb") as f:
-        measurements = pickle.load(f)
+    with open(p, "rb") as f:
+        compressed = f.read()
+    # Decompress in one C call to release the GIL
+    data = gzip.decompress(compressed)
+    measurements = pickle.loads(data)
 
     t0 = time.perf_counter()
     decoder.setup(circuit, noise)

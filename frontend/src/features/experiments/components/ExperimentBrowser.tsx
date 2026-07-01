@@ -59,6 +59,23 @@ function formatAge(exp: ExperimentTaskRead) {
   }
 }
 
+function formatDuration(startStr: string, endStr: string | null | undefined) {
+  if (!endStr) return null;
+  const start = parseUTC(startStr).getTime()
+  const end = parseUTC(endStr).getTime()
+  let diffMs = end - start
+  if (diffMs < 0) diffMs = 0
+
+  const totalSecs = Math.floor(diffMs / 1000)
+  const hours = Math.floor(totalSecs / 3600)
+  const mins = Math.floor((totalSecs % 3600) / 60)
+  const secs = totalSecs % 60
+
+  if (hours > 0) return `${hours}h ${mins}m ${secs}s`
+  if (mins > 0) return `${mins}m ${secs}s`
+  return `${secs}s`
+}
+
 export interface ExperimentBrowserProps {
   fixedStatus?: TaskStatus
   onSelectAction?: (experiment: ExperimentTaskRead) => void
@@ -157,30 +174,68 @@ export function ExperimentBrowser({
       header: 'Status',
       cell: info => {
         const val = info.getValue()
-        return (
-          <span className={`status-badge status-${val.toLowerCase()}`}>
-            {val}
-          </span>
-        )
-      },
-      size: 100,
-    }),
-    columnHelper.display({
-      id: 'age',
-      header: 'Age',
-      cell: info => {
         const exp = info.row.original
+        
+        let progressElem = null
+        if (val === 'IN_FLIGHT' && exp.jobs_total != null && exp.jobs_total > 0) {
+          const done = exp.jobs_done ?? 0
+          const total = exp.jobs_total
+          const percentage = Math.round((done / total) * 100)
+          progressElem = (
+            <div style={{ marginTop: '4px', width: '100%', background: 'var(--bg-card)', border: '1px solid var(--border-muted)', borderRadius: '2px', height: '6px', overflow: 'hidden' }}>
+              <div style={{ width: `${percentage}%`, height: '100%', background: '#3b82f6', transition: 'width 0.3s' }} />
+            </div>
+          )
+        }
+
         return (
-          <span style={{ fontSize: '12px', color: 'var(--text-main)', fontFamily: 'monospace' }}>
-            {formatAge(exp)}
-          </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: '0' }}>
+            <span className={`status-badge status-${val.toLowerCase()}`} style={{ alignSelf: 'flex-start' }}>
+              {val === 'IN_FLIGHT' && exp.jobs_total != null && exp.jobs_total > 0
+                ? `${val} (${Math.round(((exp.jobs_done ?? 0) / exp.jobs_total) * 100)}%)`
+                : val}
+            </span>
+            {progressElem}
+          </div>
         )
       },
-      size: 130,
+      size: 140,
     }),
     columnHelper.accessor('submitted_at', {
       header: 'Submitted',
-      cell: info => parseUTC(info.getValue()).toLocaleDateString(),
+      cell: info => {
+        const exp = info.row.original
+        const d = parseUTC(info.getValue())
+        const day = d.getDate().toString().padStart(2, '0')
+        const month = (d.getMonth() + 1).toString().padStart(2, '0')
+        const hours = d.getHours().toString().padStart(2, '0')
+        const mins = d.getMinutes().toString().padStart(2, '0')
+        
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span style={{ fontSize: '13px' }}>
+              {day}/{month} {hours}:{mins}
+            </span>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+              ({formatAge(exp)})
+            </span>
+          </div>
+        )
+      },
+      size: 160,
+    }),
+    columnHelper.display({
+      id: 'duration',
+      header: 'Duration',
+      cell: info => {
+        const exp = info.row.original
+        const duration = formatDuration(exp.submitted_at, exp.completed_at)
+        return (
+          <span style={{ fontSize: '12px', color: 'var(--text-main)' }}>
+            {duration ? duration : (exp.status === 'IN_FLIGHT' ? 'Running...' : '-')}
+          </span>
+        )
+      },
       size: 100,
     }),
     columnHelper.display({
@@ -522,10 +577,27 @@ export function ExperimentBrowser({
                       <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase' }}>Submitted</span>
                       <span style={{ fontSize: '12px', fontWeight: '500' }}>{toLocalDateTime(detailQuery.data.submitted_at)}</span>
                     </div>
-                    <div>
+                    {detailQuery.data.completed_at && (
+                      <div>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase' }}>Duration</span>
+                        <span style={{ fontSize: '12px', fontWeight: '500' }}>{formatDuration(detailQuery.data.submitted_at, detailQuery.data.completed_at)}</span>
+                      </div>
+                    )}
+                    <div style={{ gridColumn: detailQuery.data.completed_at ? '1 / -1' : undefined }}>
                       <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase' }}>Config Hash</span>
                       <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--accent-blue)', wordBreak: 'break-all' }}>{detailQuery.data.config_hash}</span>
                     </div>
+                    {detailQuery.data.status === 'IN_FLIGHT' && detailQuery.data.jobs_total != null && detailQuery.data.jobs_total > 0 && (
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>
+                          <span>Execution Progress</span>
+                          <span>{detailQuery.data.jobs_done ?? 0} / {detailQuery.data.jobs_total} jobs completed</span>
+                        </div>
+                        <div style={{ width: '100%', background: 'var(--bg-input)', borderRadius: '4px', height: '8px', overflow: 'hidden' }}>
+                          <div style={{ width: `${((detailQuery.data.jobs_done ?? 0) / detailQuery.data.jobs_total) * 100}%`, height: '100%', background: '#3b82f6', transition: 'width 0.3s' }} />
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Inspector Stacked Details */}
