@@ -6,86 +6,30 @@ from tests.server.test_api_endpoints import SAMPLE_EXPERIMENT
 
 pytestmark = pytest.mark.asyncio
 
-
-async def test_cancel_completed_experiment_returns_400(client: AsyncClient):
+async def test_cancel_completed_experiment_returns_400(client: AsyncClient, session):
     exp_resp = await client.post("/tasks/experiment", json=SAMPLE_EXPERIMENT)
     task_id = exp_resp.json()["id"]
 
-    poll_resp = await client.post("/worker/poll", json={"batch_size": 1, "has_gpu": False})
-    data_task = poll_resp.json()["tasks"][0]
-
-    from io import BytesIO
-
-    files = {"file": ("dummy.pkl.gz", BytesIO(b"data"), "application/gzip")}
-    await client.post(
-        f"/worker/upload/{data_task['id']}",
-        data={
-            "shots": 100,
-            "metrics_json": '{"time_build_circuit_s": 0.1, "time_apply_noise_s": 0.1, "time_runner_run_s": 1.0, "time_pickle_write_s": 0.05}',
-        },
-        files=files,
-    )
-
-    poll_resp2 = await client.post("/worker/poll", json={"batch_size": 1, "has_gpu": False})
-    decode_task = poll_resp2.json()["tasks"][0]
-
-    await client.post(
-        "/worker/complete",
-        json={
-            "type": "decoding",
-            "id": decode_task["id"],
-            "status": TaskStatus.COMPLETED,
-            "metrics": {
-                "logical_error_rate": 0.0,
-                "n_errors": 0,
-                "time_decoder_setup_s": 0.1,
-                "time_decoder_decode_s": 0.1,
-                "time_total_s": 0.2,
-            },
-        },
-    )
+    # Mark as completed manually in DB
+    from vqec.server.models.db import Experiment
+    exp = await session.get(Experiment, task_id)
+    exp.status = TaskStatus.DONE
+    session.add(exp)
+    await session.commit()
 
     resp = await client.post(f"/tasks/experiment/{task_id}/cancel")
     assert resp.status_code == 400
 
 
-async def test_retry_completed_experiment_returns_400(client: AsyncClient):
+async def test_retry_completed_experiment_returns_400(client: AsyncClient, session):
     exp_resp = await client.post("/tasks/experiment", json=SAMPLE_EXPERIMENT)
     task_id = exp_resp.json()["id"]
 
-    poll_resp = await client.post("/worker/poll", json={"batch_size": 1, "has_gpu": False})
-    data_task = poll_resp.json()["tasks"][0]
-
-    from io import BytesIO
-
-    files = {"file": ("dummy.pkl.gz", BytesIO(b"data"), "application/gzip")}
-    await client.post(
-        f"/worker/upload/{data_task['id']}",
-        data={
-            "shots": 100,
-            "metrics_json": '{"time_build_circuit_s": 0.1, "time_apply_noise_s": 0.1, "time_runner_run_s": 1.0, "time_pickle_write_s": 0.05}',
-        },
-        files=files,
-    )
-
-    poll_resp2 = await client.post("/worker/poll", json={"batch_size": 1, "has_gpu": False})
-    decode_task = poll_resp2.json()["tasks"][0]
-
-    await client.post(
-        "/worker/complete",
-        json={
-            "type": "decoding",
-            "id": decode_task["id"],
-            "status": TaskStatus.COMPLETED,
-            "metrics": {
-                "logical_error_rate": 0.0,
-                "n_errors": 0,
-                "time_decoder_setup_s": 0.1,
-                "time_decoder_decode_s": 0.1,
-                "time_total_s": 0.2,
-            },
-        },
-    )
+    from vqec.server.models.db import Experiment
+    exp = await session.get(Experiment, task_id)
+    exp.status = TaskStatus.DONE
+    session.add(exp)
+    await session.commit()
 
     resp = await client.post(f"/tasks/experiment/{task_id}/retry")
     assert resp.status_code == 400
@@ -138,43 +82,16 @@ async def test_delete_experiment_failure_returns_400(client: AsyncClient, monkey
     assert resp.status_code == 400
 
 
-async def test_download_pending_export_returns_202(client: AsyncClient):
+async def test_download_pending_export_returns_202(client: AsyncClient, session):
     exp_resp = await client.post("/tasks/experiment", json=SAMPLE_EXPERIMENT)
     task_id = exp_resp.json()["id"]
 
-    poll_resp = await client.post("/worker/poll", json={"batch_size": 1, "has_gpu": False})
-    data_task = poll_resp.json()["tasks"][0]
-
-    from io import BytesIO
-
-    files = {"file": ("dummy.pkl.gz", BytesIO(b"data"), "application/gzip")}
-    await client.post(
-        f"/worker/upload/{data_task['id']}",
-        data={
-            "shots": 100,
-            "metrics_json": '{"time_build_circuit_s": 0.1, "time_apply_noise_s": 0.1, "time_runner_run_s": 1.0, "time_pickle_write_s": 0.05}',
-        },
-        files=files,
-    )
-
-    poll_resp2 = await client.post("/worker/poll", json={"batch_size": 1, "has_gpu": False})
-    decode_task = poll_resp2.json()["tasks"][0]
-
-    await client.post(
-        "/worker/complete",
-        json={
-            "type": "decoding",
-            "id": decode_task["id"],
-            "status": TaskStatus.COMPLETED,
-            "metrics": {
-                "logical_error_rate": 0.0,
-                "n_errors": 0,
-                "time_decoder_setup_s": 0.1,
-                "time_decoder_decode_s": 0.1,
-                "time_total_s": 0.2,
-            },
-        },
-    )
+    from vqec.server.models.db import Experiment
+    exp = await session.get(Experiment, task_id)
+    exp.status = TaskStatus.DONE
+    # Not setting result_path to trigger 202
+    session.add(exp)
+    await session.commit()
 
     resp = await client.get(f"/tasks/experiment/{task_id}/download")
     assert resp.status_code == 202

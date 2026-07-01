@@ -7,65 +7,47 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlmodel import SQLModel
+from dask.distributed import Client
 
 from vqec.server.config import settings
 from vqec.server.database import async_engine
-from vqec.server.routers import registry, system, tasks, worker
+from vqec.server.routers import registry, system, tasks
+from vqec.server.models.db import Experiment, TaskStatus
 
 logger = logging.getLogger(__name__)
 
-
-async def _export_loop(stop: asyncio.Event) -> None:
-    from vqec.server.workers.export_worker import process_exports
-
-    while not stop.is_set():
-        try:
-            if settings.export_worker:
-                await process_exports()
-        except Exception as exc:
-            logger.error("Export loop error: %s", exc)
-        try:
-            await asyncio.wait_for(stop.wait(), timeout=5)
-        except TimeoutError:
-            continue
-
-
-async def _lease_loop(stop: asyncio.Event) -> None:
-    from vqec.server.workers.update_worker import process_expired_leases
-
-    while not stop.is_set():
-        try:
-            await process_expired_leases()
-        except Exception as exc:
-            logger.error("Lease loop error: %s", exc)
-        try:
-            await asyncio.wait_for(stop.wait(), timeout=settings.worker_poll_interval_ms / 1000)
-        except TimeoutError:
-            continue
+dask_client = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global dask_client
+
     async with async_engine.begin() as conn:
         if settings.database_url.startswith("sqlite") and "memory" not in settings.database_url:
             await conn.execute(text("PRAGMA journal_mode=WAL;"))
             await conn.execute(text("PRAGMA synchronous=NORMAL;"))
         await conn.run_sync(SQLModel.metadata.create_all)
+        
+        # After restart: "If an experiment is marked `IN_FLIGHT` but no corresponding Dask computation exists, 
+        # it should transition to `ERROR` so it can later be retried."
+        # We don't restore Dask state, so all IN_FLIGHT become ERROR
+        await conn.execute(
+            text("UPDATE experiment SET status = :new_status WHERE status = :old_status"),
+            {"new_status": TaskStatus.ERROR.value, "old_status": TaskStatus.IN_FLIGHT.value}
+        )
 
     from vqec.core.registry import scan_adapters
 
     scan_adapters(Path(__file__).parent.parent / "adapters")
-
-    stop = asyncio.Event()
-    export_task = asyncio.create_task(_export_loop(stop))
-    lease_task = asyncio.create_task(_lease_loop(stop))
+    
+    # Initialize Dask client
+    dask_client = await Client(settings.dask_scheduler_address, asynchronous=True)
 
     yield
 
-    stop.set()
-    export_task.cancel()
-    lease_task.cancel()
-    await asyncio.gather(export_task, lease_task, return_exceptions=True)
+    if dask_client:
+        await dask_client.close()
     await async_engine.dispose()
 
 
@@ -89,4 +71,3 @@ if settings.cors_origins:
 app.include_router(system.router)
 app.include_router(registry.router, prefix="/registry", tags=["registry"])
 app.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
-app.include_router(worker.router, prefix="/worker", tags=["worker"])

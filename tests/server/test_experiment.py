@@ -18,7 +18,7 @@ async def test_experiment_lifecycle(client: AsyncClient):
     assert len(exps) >= 1
     assert any(e["id"] == task_id for e in exps)
     
-    resp = await client.get(f"/tasks/experiment?status={TaskStatus.PENDING}")
+    resp = await client.get(f"/tasks/experiment?status={TaskStatus.IN_FLIGHT}")
     assert resp.status_code == 200
 
     # 3. Get 404
@@ -37,7 +37,7 @@ async def test_experiment_lifecycle(client: AsyncClient):
     # 5. Retry
     resp = await client.post(f"/tasks/experiment/{task_id}/retry")
     assert resp.status_code == 200
-    assert resp.json()["status"] == TaskStatus.PENDING
+    assert resp.json()["status"] == TaskStatus.IN_FLIGHT
 
     # Retry not found
     resp = await client.post("/tasks/experiment/99999/retry")

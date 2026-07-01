@@ -9,6 +9,27 @@ from sqlmodel import SQLModel
 from vqec.server.main import app
 from vqec.server.database import get_session
 
+@pytest.fixture(scope="function", autouse=True)
+def mock_dask_client(monkeypatch):
+    class MockFuture:
+        def add_done_callback(self, cb):
+            pass
+        def cancel(self):
+            pass
+        def result(self):
+            return "mocked_path.parquet"
+
+    class MockClient:
+        def submit(self, *args, **kwargs):
+            return MockFuture()
+        def close(self):
+            pass
+
+    def get_mock_client():
+        return MockClient()
+
+    monkeypatch.setattr("vqec.server.services.experiment.get_dask_client", get_mock_client)
+
 # Create an in-memory SQLite engine for tests
 test_engine = create_async_engine(
     "sqlite+aiosqlite:///:memory:",

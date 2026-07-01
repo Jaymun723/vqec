@@ -4,20 +4,20 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vqec.server.database import get_session
-from vqec.server.models.schemas import ExperimentTaskRead, ExperimentTaskDetail
+from vqec.server.models.schemas import ExperimentRead, ExperimentDetail, ExperimentDeletedRead
 from vqec.server.services.experiment import ExperimentService
 
 router = APIRouter()
 
 
-@router.post("/experiment", response_model=ExperimentTaskRead)
+@router.post("/experiment", response_model=ExperimentRead)
 async def submit_experiment(config: dict, session: AsyncSession = Depends(get_session)):
     service = ExperimentService(session)
     experiment = await service.submit_experiment(config)
     return await service.to_read(experiment)
 
 
-@router.get("/experiment", response_model=list[ExperimentTaskRead])
+@router.get("/experiment", response_model=list[ExperimentRead])
 async def list_experiments(
     limit: int = 100,
     offset: int = 0,
@@ -29,68 +29,62 @@ async def list_experiments(
     return [await service.to_read(experiment) for experiment in experiments]
 
 
-@router.get("/experiment/{task_id}", response_model=ExperimentTaskDetail)
+@router.get("/experiment/{task_id}", response_model=ExperimentDetail)
 async def get_experiment(task_id: int, session: AsyncSession = Depends(get_session)):
     service = ExperimentService(session)
-    result = await service.get_experiment(task_id)
-    if not result:
+    experiment = await service.get_experiment(task_id)
+    if not experiment:
         raise HTTPException(status_code=404, detail="Experiment not found")
-    experiment, jobs = result
-    return await service.to_detail(experiment, jobs)
+    return await service.to_detail(experiment)
 
 
 @router.get("/experiment/{task_id}/download")
 async def download_experiment_results(task_id: int, session: AsyncSession = Depends(get_session)):
     service = ExperimentService(session)
-    result = await service.get_experiment(task_id)
-    if not result:
+    experiment = await service.get_experiment(task_id)
+    if not experiment:
         raise HTTPException(status_code=404, detail="Experiment not found")
-    experiment, _ = result
 
-    if experiment.status != "COMPLETED":
-        raise HTTPException(status_code=400, detail="Experiment is not COMPLETED yet")
+    if experiment.status != "DONE":
+        raise HTTPException(status_code=400, detail="Experiment is not DONE yet")
 
-    if not experiment.parquet_results_path or not Path(experiment.parquet_results_path).exists():
-        return JSONResponse(status_code=202, content={"detail": "Parquet export still in progress"})
+    if not experiment.result_path or not Path(experiment.result_path).exists():
+        return JSONResponse(status_code=202, content={"detail": "Parquet export still in progress or not found"})
 
-    return FileResponse(experiment.parquet_results_path, media_type="application/octet-stream")
+    return FileResponse(experiment.result_path, media_type="application/octet-stream")
 
 
-@router.post("/experiment/{task_id}/cancel", response_model=ExperimentTaskRead)
+@router.post("/experiment/{task_id}/cancel", response_model=ExperimentRead)
 async def cancel_experiment(task_id: int, session: AsyncSession = Depends(get_session)):
     service = ExperimentService(session)
-    experiment = await service.repo.get_by_id(task_id)
+    experiment = await service.cancel_experiment(task_id)
     if not experiment:
         raise HTTPException(status_code=404, detail="Experiment not found")
-    cancelled = await service.cancel_experiment(task_id)
-    return await service.to_read(cancelled)
+    return await service.to_read(experiment)
 
 
-@router.post("/experiment/{task_id}/retry", response_model=ExperimentTaskRead)
+@router.post("/experiment/{task_id}/retry", response_model=ExperimentRead)
 async def retry_experiment(task_id: int, session: AsyncSession = Depends(get_session)):
     service = ExperimentService(session)
-    experiment = await service.repo.get_by_id(task_id)
+    experiment = await service.retry_experiment(task_id)
     if not experiment:
         raise HTTPException(status_code=404, detail="Experiment not found")
-    retried = await service.retry_experiment(task_id)
-    return await service.to_read(retried)
+    return await service.to_read(experiment)
 
 
-@router.delete("/experiment/{task_id}")
+@router.delete("/experiment/{task_id}", response_model=ExperimentDeletedRead)
 async def delete_experiment(task_id: int, session: AsyncSession = Depends(get_session)):
     service = ExperimentService(session)
-    result = await service.get_experiment(task_id)
-    if not result:
+    experiment = await service.get_experiment(task_id)
+    if not experiment:
         raise HTTPException(status_code=404, detail="Experiment not found")
-    experiment, _ = result
 
     success = await service.delete_experiment(task_id)
     if not success:
         raise HTTPException(status_code=400, detail="Could not delete experiment")
 
-    return {
-        "id": experiment.id,
-        "name": experiment.name,
-        "config_hash": experiment.config_hash,
-        "status": "deleted",
-    }
+    return ExperimentDeletedRead(
+        id=experiment.id,
+        name=experiment.name,
+        config_hash=experiment.config_hash,
+    )

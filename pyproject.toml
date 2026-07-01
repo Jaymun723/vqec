@@ -24,6 +24,9 @@ dependencies = [
     "httpx>=0.28.1",
     "scikit-learn>=1.9.0",
     "xgboost>=3.3.0",
+    "bokeh>=3.9.1",
+    "distributed>=2026.6.0",
+    "dask>=2026.6.0",
 ]
 
 [dependency-groups]

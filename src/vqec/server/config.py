@@ -8,11 +8,8 @@ class ServerConfig(BaseSettings):
     host: str = Field(default="0.0.0.0", alias="VQEC_HOST")
     port: int = Field(default=8000, alias="VQEC_PORT")
     log_level: str = Field(default="INFO", alias="VQEC_LOG_LEVEL")
-    task_lease_seconds: int = Field(default=600, alias="VQEC_TASK_LEASE_SECONDS")
-    max_upload_bytes: int = Field(default=536870912, alias="VQEC_MAX_UPLOAD_BYTES")
     cors_origins: str = Field(default="*", alias="VQEC_CORS_ORIGINS")
-    export_worker: bool = Field(default=True, alias="VQEC_EXPORT_WORKER")
-    worker_poll_interval_ms: int = Field(default=100, alias="VQEC_WORKER_POLL_INTERVAL_MS")
+    dask_scheduler_address: str = Field(default="tcp://127.0.0.1:8786", alias="VQEC_DASK_SCHEDULER_ADDRESS")
     
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
