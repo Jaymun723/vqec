@@ -93,7 +93,6 @@ def test_full_distributed_e2e():
                 [sys.executable, "-m", "uvicorn", "vqec.server.main:app", "--port", str(api_port)],
                 env=env,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
                 preexec_fn=os.setsid,
             )
 

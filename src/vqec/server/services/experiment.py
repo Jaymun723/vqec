@@ -35,7 +35,7 @@ def wrap_data_generation(spec, data_hash):
     metrics = execute_data_generation(spec, out_path)
     
     db_url = os.environ.get("VQEC_DATABASE_URL", "sqlite:///data/vqec_server.db").replace("sqlite+aiosqlite", "sqlite")
-    engine = create_engine(db_url, connect_args={"timeout": 30})
+    engine = create_engine(db_url, connect_args={"timeout": 0.1})
     import time
     for attempt in range(10):
         try:
@@ -60,7 +60,7 @@ def wrap_decoding(data_spec, decode_spec, decode_hash, data_res):
     metrics = execute_decoding(data_spec, decode_spec, data_res["outcome_file_path"])
     
     db_url = os.environ.get("VQEC_DATABASE_URL", "sqlite:///data/vqec_server.db").replace("sqlite+aiosqlite", "sqlite")
-    engine = create_engine(db_url, connect_args={"timeout": 30})
+    engine = create_engine(db_url, connect_args={"timeout": 0.1})
     import time
     for attempt in range(10):
         try:
@@ -107,45 +107,53 @@ def wrap_consolidation(jobs, decode_results, config_output):
     return str(out_path)
 
 def _on_consolidation_done(future, experiment_id, db_url):
-    import os
-    from sqlalchemy import create_engine, text
-    import traceback
-    
-    url = db_url.replace("sqlite+aiosqlite", "sqlite")
-    engine = create_engine(url, connect_args={"timeout": 30})
-    import time
-    
+    import asyncio
+    async def _do():
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy import text
+        import traceback
+
+        # Ensure we use aiosqlite for async sqlalchemy
+        url = db_url.replace("sqlite://", "sqlite+aiosqlite://") if db_url.startswith("sqlite://") else db_url
+        engine = create_async_engine(url, connect_args={"timeout": 0.1})
+        
+        try:
+            result_path = future.result()
+            for attempt in range(10):
+                try:
+                    async with engine.begin() as conn:
+                        await conn.execute(
+                            text("UPDATE experiment SET status = :status, result_path = :path WHERE id = :id"),
+                            {"status": TaskStatus.DONE.value, "path": result_path, "id": experiment_id}
+                        )
+                    break
+                except Exception as e:
+                    if "database is locked" in str(e).lower() and attempt < 9:
+                        await asyncio.sleep(1 + attempt * 0.5)
+                    else:
+                        raise
+        except Exception as e:
+            for attempt in range(10):
+                try:
+                    async with engine.begin() as conn:
+                        await conn.execute(
+                            text("UPDATE experiment SET status = :status, error = :error WHERE id = :id"),
+                            {"status": TaskStatus.ERROR.value, "error": str(e) + "\n" + traceback.format_exc(), "id": experiment_id}
+                        )
+                    break
+                except Exception as inner_e:
+                    if "database is locked" in str(inner_e).lower() and attempt < 9:
+                        await asyncio.sleep(1 + attempt * 0.5)
+                    else:
+                        raise
+        
+        _active_experiments.pop(experiment_id, None)
+
     try:
-        result_path = future.result()
-        for attempt in range(10):
-            try:
-                with engine.begin() as conn:
-                    conn.execute(
-                        text("UPDATE experiment SET status = :status, result_path = :path WHERE id = :id"),
-                        {"status": TaskStatus.DONE.value, "path": result_path, "id": experiment_id}
-                    )
-                break
-            except Exception as e:
-                if "database is locked" in str(e).lower() and attempt < 9:
-                    time.sleep(1 + attempt * 0.5)
-                else:
-                    raise
-    except Exception as e:
-        for attempt in range(10):
-            try:
-                with engine.begin() as conn:
-                    conn.execute(
-                        text("UPDATE experiment SET status = :status, error = :error WHERE id = :id"),
-                        {"status": TaskStatus.ERROR.value, "error": str(e) + "\n" + traceback.format_exc(), "id": experiment_id}
-                    )
-                break
-            except Exception as inner_e:
-                if "database is locked" in str(inner_e).lower() and attempt < 9:
-                    time.sleep(1 + attempt * 0.5)
-                else:
-                    raise
-    
-    _active_experiments.pop(experiment_id, None)
+        loop = asyncio.get_running_loop()
+        loop.create_task(_do())
+    except RuntimeError:
+        asyncio.run(_do())
 
 class ExperimentService:
     def __init__(self, session: AsyncSession):
