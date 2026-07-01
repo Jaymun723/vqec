@@ -37,10 +37,6 @@ async def lifespan(app: FastAPI):
             {"new_status": TaskStatus.ERROR.value, "old_status": TaskStatus.IN_FLIGHT.value}
         )
 
-    from vqec.core.registry import scan_adapters
-
-    scan_adapters(Path(__file__).parent.parent / "adapters")
-    
     # Initialize Dask client
     dask_client = await Client(settings.dask_scheduler_address, asynchronous=True)
 

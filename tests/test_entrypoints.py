@@ -11,11 +11,15 @@ def test_vqec_package_main():
     mock_main.assert_called_once()
 
 
+import warnings
+
 def test_vqec_cli_module_main():
-    with patch.object(sys, "argv", ["vqec"]):
-        with pytest.raises(SystemExit) as exc:
-            runpy.run_module("vqec.cli.main", run_name="__main__")
-    assert exc.value.code == 1
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        with patch.object(sys, "argv", ["vqec"]):
+            with pytest.raises(SystemExit) as exc:
+                runpy.run_module("vqec.cli.main", run_name="__main__")
+        assert exc.value.code == 1
 
 
 def test_vqec_version():

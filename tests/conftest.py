@@ -41,12 +41,6 @@ TestingSessionLocal = sessionmaker(
     bind=test_engine, class_=AsyncSession, expire_on_commit=False
 )
 
-@pytest.fixture(scope="session", autouse=True)
-def setup_adapters():
-    from vqec.core.registry import scan_adapters
-    from pathlib import Path
-    scan_adapters(Path(__file__).parent.parent / "src" / "vqec" / "adapters")
-
 @pytest_asyncio.fixture(scope="function")
 async def session():
     # Setup tables for each test

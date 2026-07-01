@@ -4,7 +4,6 @@ from vqec.core.registry import (
     decoder_registry,
     noise_registry,
     runner_registry,
-    scan_adapters,
 )
 
 __all__ = [
@@ -16,5 +15,4 @@ __all__ = [
     "noise_registry",
     "runner_registry",
     "decoder_registry",
-    "scan_adapters",
 ]

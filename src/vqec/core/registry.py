@@ -7,8 +7,6 @@ Users never call anything here directly.
 
 from __future__ import annotations
 
-import importlib.util
-import pkgutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Generic, TypeVar
 
@@ -84,26 +82,7 @@ runner_registry: _Registry[Runner] = _Registry("Runner")
 decoder_registry: _Registry[Decoder] = _Registry("Decoder")
 
 
-def scan_adapters(path: str | Path) -> None:
-    """
-    Import every .py file under *path* so that subclasses self-register.
-
-    Call this once at startup, e.g.:
-        scan_adapters("adapters/")
-    """
-    path = Path(path)
-    if not path.exists():
-        return
-    for finder, module_name, _ in pkgutil.walk_packages(
-        path=[str(path)], onerror=lambda e: None
-    ):
-        spec = finder.find_spec(module_name)  # type: ignore[attr-defined]
-        if spec and spec.origin:
-            importlib.util.spec_from_file_location(module_name, spec.origin)
-            mod = importlib.util.module_from_spec(spec)
-            try:
-                spec.loader.exec_module(mod)  # type: ignore[union-attr]
-            except Exception as exc:
-                import warnings
-
-                warnings.warn(f"Could not import adapter module '{module_name}': {exc}")
+import vqec.adapters.circuit_constructors
+import vqec.adapters.noise
+import vqec.adapters.runners
+import vqec.adapters.decoders

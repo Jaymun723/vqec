@@ -78,7 +78,7 @@ def test_full_distributed_e2e():
 
             # 2. Start Dask Worker
             worker_proc = subprocess.Popen(
-                [sys.executable, "-m", "distributed.cli.dask_worker", scheduler_url, "--preload", "vqec.dask_preload"],
+                [sys.executable, "-m", "distributed.cli.dask_worker", scheduler_url],
                 env=env,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

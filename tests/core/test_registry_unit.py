@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from vqec.core.registry import ComponentRegistry, scan_adapters
+from vqec.core.registry import ComponentRegistry
 
 
 def test_component_registry_register_and_lookup():
@@ -21,21 +21,6 @@ def test_component_registry_register_and_lookup():
 
     with pytest.raises(KeyError, match="Unknown component"):
         registry.get("missing")
-
-
-def test_scan_adapters_missing_path(tmp_path):
-    scan_adapters(tmp_path / "does-not-exist")
-
-
-def test_scan_adapters_warns_on_bad_module(tmp_path):
-    bad_module = tmp_path / "broken_adapter.py"
-    bad_module.write_text("raise RuntimeError('boom')\n")
-
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        scan_adapters(tmp_path)
-
-    assert any("broken_adapter" in str(w.message) for w in caught)
 
 
 def test_registry_infers_name_from_class():
